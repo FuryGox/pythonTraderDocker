@@ -2,6 +2,17 @@ import subprocess
 import json
 
 
+def restart_container(container_name: str) -> str:
+    """Start an existing (stopped) container or restart a running one."""
+    result = subprocess.run(
+        ["docker", "start", container_name],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"docker start failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def stop_container(container_id: str) -> str:
     result = subprocess.run(
         ["docker", "stop", container_id],
