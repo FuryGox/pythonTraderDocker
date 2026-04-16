@@ -49,6 +49,8 @@ Start a trading platform container.
 }
 ```
 
+The request body should be sent as a JSON object. The API also tolerates clients that send the same payload as a JSON-encoded string.
+
 `platform` must be one of: `mt4`, `mt5`, `ctrader`
 
 **Response:**

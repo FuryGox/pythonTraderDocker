@@ -63,7 +63,7 @@ def start_mt5_docker(account: str, password: str, server: str):
     cmd = [
         "docker", "run", "-d",
         "--name", container_name,
-        "mt5-wine-auto",
+        "mt5-beq-auto",
         account,
         password,
         server,
@@ -79,7 +79,7 @@ def start_ctrader_docker(account: str, password: str, server: str):
     cmd = [
         "docker", "run", "-d",
         "--name", container_name,
-        "ctrader-auto",
+        "ctrader-beq-auto",
         account,
         password,
         server,

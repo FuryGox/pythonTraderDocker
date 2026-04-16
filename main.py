@@ -1,5 +1,7 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import json
+
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, model_validator
 from enum import Enum
 from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container
 from db import init_db, save_account_container, get_account_container
@@ -15,15 +17,49 @@ class Platform(str, Enum):
     ctrader = "ctrader"
 
 
-class RunRequest(BaseModel):
+class JsonStringCompatibleModel(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def parse_json_string_body(cls, value):
+        if not isinstance(value, str):
+            return value
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Request body must be a valid JSON object") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("Request body must decode to a JSON object")
+
+        return parsed
+
+
+class RunRequest(JsonStringCompatibleModel):
     account: str
     password: str
     server: str
     platform: Platform
 
 
+async def parse_request_model(request: Request, model_class: type[JsonStringCompatibleModel]):
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        raw_body = (await request.body()).decode("utf-8").strip()
+        if not raw_body:
+            raise HTTPException(status_code=400, detail="Request body is required")
+        payload = raw_body
+
+    try:
+        return model_class.model_validate(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/run")
-def run_platform(payload: RunRequest):
+async def run_platform(request: Request):
+    payload = await parse_request_model(request, RunRequest)
     account = payload.account
     password = payload.password
     server = payload.server
@@ -73,12 +109,13 @@ def get_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class StopRequest(BaseModel):
+class StopRequest(JsonStringCompatibleModel):
     id: str
 
 
 @app.post("/api/stop")
-def stop_container_route(payload: StopRequest):
+async def stop_container_route(request: Request):
+    payload = await parse_request_model(request, StopRequest)
     try:
         stopped = stop_container(payload.id)
         return {"status": "stopped", "container": stopped}
