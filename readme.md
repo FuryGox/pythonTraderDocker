@@ -8,8 +8,8 @@ A FastAPI service that launches and manages Docker containers for MT4, MT5, and 
 - Docker (running and accessible from the command line)
 - Docker images built and tagged:
   - `mt4-beq-auto`
-  - `mt5-wine-auto`
-  - `ctrader-auto`
+  - `mt5-beq-auto`
+  - `ctrader-auto` (Upcomming)
 
 ## Setup
 
