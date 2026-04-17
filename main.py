@@ -38,8 +38,48 @@ class JsonStringCompatibleModel(BaseModel):
 class RunRequest(JsonStringCompatibleModel):
     account: str
     password: str
-    server: str
     platform: Platform
+    server: str | None = None
+    ctrader_id: str | None = None
+    symbol: str = "EURUSD"
+    period: str = "H1"
+
+    @model_validator(mode="after")
+    def validate_platform_fields(self):
+        if self.platform in {Platform.mt4, Platform.mt5} and not self.server:
+            raise ValueError("server is required for mt4 and mt5")
+
+        if self.platform == Platform.ctrader and not self.ctrader_id:
+            raise ValueError("ctrader_id is required for ctrader")
+
+        return self
+
+
+def build_run_response(
+    status: str,
+    platform: Platform,
+    account: str,
+    container_name: str,
+    server: str | None = None,
+    ctrader_id: str | None = None,
+    symbol: str | None = None,
+    period: str | None = None,
+):
+    response = {
+        "status": status,
+        "platform": platform,
+        "account": account,
+        "container": container_name,
+    }
+
+    if platform == Platform.ctrader:
+        response["ctrader_id"] = ctrader_id
+        response["symbol"] = symbol
+        response["period"] = period
+    else:
+        response["server"] = server
+
+    return response
 
 
 async def parse_request_model(request: Request, model_class: type[JsonStringCompatibleModel]):
@@ -62,40 +102,60 @@ async def run_platform(request: Request):
     payload = await parse_request_model(request, RunRequest)
     account = payload.account
     password = payload.password
-    server = payload.server
     platform = payload.platform
 
     try:
         existing = get_account_container(account, platform)
         if existing:
             restart_container(existing["container_name"])
-            return {
-                "status": "restarted",
-                "platform": platform,
-                "account": account,
-                "server": existing["server"],
-                "container": existing["container_name"],
-            }
+            if platform == Platform.ctrader:
+                return build_run_response(
+                    status="restarted",
+                    platform=platform,
+                    account=account,
+                    container_name=existing["container_name"],
+                    ctrader_id=existing["server"],
+                    symbol=payload.symbol,
+                    period=payload.period,
+                )
+
+            return build_run_response(
+                status="restarted",
+                platform=platform,
+                account=account,
+                container_name=existing["container_name"],
+                server=existing["server"],
+            )
 
         if platform == Platform.mt4:
             container_name = f"mt4_bot_{account}"
-            start_mt4_docker(account, password, server)
+            start_mt4_docker(account, password, payload.server)
+            save_account_container(account, platform, payload.server, container_name)
         elif platform == Platform.mt5:
             container_name = f"mt5_bot_{account}"
-            start_mt5_docker(account, password, server)
+            start_mt5_docker(account, password, payload.server)
+            save_account_container(account, platform, payload.server, container_name)
         elif platform == Platform.ctrader:
             container_name = f"ctrader_bot_{account}"
-            start_ctrader_docker(account, password, server)
+            start_ctrader_docker(
+                account=account,
+                password=password,
+                ctrader_id=payload.ctrader_id,
+                symbol=payload.symbol,
+                period=payload.period,
+            )
+            save_account_container(account, platform, payload.ctrader_id, container_name)
 
-        save_account_container(account, platform, server, container_name)
-
-        return {
-            "status": "started",
-            "platform": platform,
-            "account": account,
-            "server": server,
-            "container": container_name,
-        }
+        return build_run_response(
+            status="started",
+            platform=platform,
+            account=account,
+            container_name=container_name,
+            server=payload.server,
+            ctrader_id=payload.ctrader_id,
+            symbol=payload.symbol,
+            period=payload.period,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -9,7 +9,7 @@ A FastAPI service that launches and manages Docker containers for MT4, MT5, and 
 - Docker images built and tagged:
   - `mt4-beq-auto`
   - `mt5-beq-auto`
-  - `ctrader-auto` (Upcomming)
+  - cTrader uses `ghcr.io/spotware/ctrader-console:latest`
 
 ## Setup
 
@@ -53,6 +53,21 @@ The request body should be sent as a JSON object. The API also tolerates clients
 
 `platform` must be one of: `mt4`, `mt5`, `ctrader`
 
+For `ctrader`, use `ctrader_id` instead of `server`. The API writes the cTrader password into a `.pwd` file under `bot/` and mounts that directory into the official cTrader CLI docker image together with `bot/lumir-ctrader.algo`.
+
+Example cTrader request:
+
+```json
+{
+  "account": "9102302",
+  "password": "yourpassword",
+  "ctrader_id": "mycid",
+  "platform": "ctrader",
+  "symbol": "EURUSD",
+  "period": "H1"
+}
+```
+
 **Response:**
 ```json
 {
@@ -61,6 +76,8 @@ The request body should be sent as a JSON object. The API also tolerates clients
   "account": "12345678",
   "server": "Broker-Live"
 }
+
+For `ctrader`, the response includes `ctrader_id`, `symbol`, and `period` instead of `server`.
 ```
 
 ---
