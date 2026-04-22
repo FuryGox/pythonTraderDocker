@@ -1,10 +1,11 @@
 import json
+import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, model_validator
 from enum import Enum
-from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container, remove_container
-from db import init_db, save_account_container, get_account_container, delete_account_container_by_name
+from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container, remove_container, clear_containers
+from db import init_db, save_account_container, get_account_container, delete_account_container_by_name, add_account_container, update_account_container, delete_account_container, list_account_containers, clear_account_containers, delete_account_containers_by_names
 
 app = FastAPI()
 
@@ -15,6 +16,12 @@ class Platform(str, Enum):
     mt4 = "mt4"
     mt5 = "mt5"
     ctrader = "ctrader"
+
+
+class DockerClearType(str, Enum):
+    all = "all"
+    exited = "exited"
+    running = "running"
 
 
 class JsonStringCompatibleModel(BaseModel):
@@ -97,7 +104,7 @@ async def parse_request_model(request: Request, model_class: type[JsonStringComp
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@app.post("/api/run")
+@app.post("/api/docker/run")
 async def run_platform(request: Request):
     payload = await parse_request_model(request, RunRequest)
     account = payload.account
@@ -160,7 +167,7 @@ async def run_platform(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/status")
+@app.get("/api/docker/status")
 def get_status():
     try:
         containers = get_containers_status()
@@ -173,7 +180,7 @@ class StopRequest(JsonStringCompatibleModel):
     id: str
 
 
-@app.post("/api/stop")
+@app.post("/api/docker/stop")
 async def stop_container_route(request: Request):
     payload = await parse_request_model(request, StopRequest)
     try:
@@ -187,12 +194,148 @@ class RemoveRequest(JsonStringCompatibleModel):
     container_id: str
 
 
-@app.post("/api/remove")
+class DockerClearRequest(JsonStringCompatibleModel):
+    type: DockerClearType
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_exit_aliases(cls, value):
+        if isinstance(value, dict) and value.get("type") in {"stopped", "stoped"}:
+            normalized = dict(value)
+            normalized["type"] = "exited"
+            return normalized
+        return value
+
+
+@app.post("/api/docker/remove")
 async def remove_container_route(request: Request):
     payload = await parse_request_model(request, RemoveRequest)
     try:
         removed = remove_container(payload.container_id)
         delete_account_container_by_name(removed)
         return {"status": "removed", "container": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/docker/clear")
+async def clear_docker_containers_route(request: Request):
+    payload = await parse_request_model(request, DockerClearRequest)
+    try:
+        removed_containers = clear_containers(payload.type)
+        deleted_rows = delete_account_containers_by_names(removed_containers)
+        return {
+            "status": "cleared",
+            "type": payload.type,
+            "containers": removed_containers,
+            "deleted": len(removed_containers),
+            "db_deleted": deleted_rows,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DbEntryRequest(JsonStringCompatibleModel):
+    account: str
+    platform: Platform
+    server: str
+    container_name: str
+
+
+class DbEntryRemoveRequest(JsonStringCompatibleModel):
+    account: str
+    platform: Platform
+
+
+@app.post("/api/db/add")
+async def add_db_entry_route(request: Request):
+    payload = await parse_request_model(request, DbEntryRequest)
+    try:
+        add_account_container(
+            account=payload.account,
+            platform=payload.platform,
+            server=payload.server,
+            container_name=payload.container_name,
+        )
+        return {
+            "status": "added",
+            "entry": {
+                "account": payload.account,
+                "platform": payload.platform,
+                "server": payload.server,
+                "container_name": payload.container_name,
+            },
+        }
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="DB entry already exists") from exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/edit")
+async def edit_db_entry_route(request: Request):
+    payload = await parse_request_model(request, DbEntryRequest)
+    try:
+        updated_rows = update_account_container(
+            account=payload.account,
+            platform=payload.platform,
+            server=payload.server,
+            container_name=payload.container_name,
+        )
+        if updated_rows == 0:
+            raise HTTPException(status_code=404, detail="DB entry not found")
+
+        return {
+            "status": "updated",
+            "entry": {
+                "account": payload.account,
+                "platform": payload.platform,
+                "server": payload.server,
+                "container_name": payload.container_name,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/remove")
+async def remove_db_entry_route(request: Request):
+    payload = await parse_request_model(request, DbEntryRemoveRequest)
+    try:
+        deleted_rows = delete_account_container(
+            account=payload.account,
+            platform=payload.platform,
+        )
+        if deleted_rows == 0:
+            raise HTTPException(status_code=404, detail="DB entry not found")
+
+        return {
+            "status": "removed",
+            "entry": {
+                "account": payload.account,
+                "platform": payload.platform,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/list")
+def list_db_entries_route():
+    try:
+        return {"entries": list_account_containers()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/clear")
+def clear_db_entries_route():
+    try:
+        deleted_rows = clear_account_containers()
+        return {"status": "cleared", "deleted": deleted_rows}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

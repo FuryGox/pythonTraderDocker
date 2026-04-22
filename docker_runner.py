@@ -7,6 +7,7 @@ BASE_DIR = os.path.dirname(__file__)
 CTRADER_BOT_DIR = os.path.join(BASE_DIR, "bot")
 CTRADER_BOT_FILE = "lumir-ctrader.algo"
 CTRADER_BOT_MOUNT_DIR = "/mnt/Robots"
+MANAGED_CONTAINER_PREFIXES = ("mt4_bot_", "mt5_bot_", "ctrader_bot_")
 
 
 def _get_ctrader_bot_host_path() -> str:
@@ -57,12 +58,28 @@ def remove_container(container_id: str) -> str:
     return result.stdout.strip()
 
 
+def clear_containers(clear_type: str) -> list[str]:
+    containers = get_containers_status()
+    if clear_type == "running":
+        target_containers = [container for container in containers if container.get("State") == "running"]
+    elif clear_type in {"exited", "stopped", "stoped"}:
+        target_containers = [container for container in containers if container.get("State") != "running"]
+    else:
+        target_containers = containers
+
+    removed_containers = []
+    for container in target_containers:
+        container_name = container.get("Names") or container.get("ID")
+        if not container_name:
+            continue
+        removed_containers.append(remove_container(container_name))
+
+    return removed_containers
+
+
 def get_containers_status() -> list[dict]:
     cmd = [
         "docker", "ps", "-a",
-        "--filter", "name=mt4_bot_",
-        "--filter", "name=mt5_bot_",
-        "--filter", "name=ctrader_bot_",
         "--format", "{{json .}}",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -72,7 +89,9 @@ def get_containers_status() -> list[dict]:
     containers = []
     for line in result.stdout.strip().splitlines():
         if line:
-            containers.append(json.loads(line))
+            container = json.loads(line)
+            if container.get("Names", "").startswith(MANAGED_CONTAINER_PREFIXES):
+                containers.append(container)
     return containers
 
 
