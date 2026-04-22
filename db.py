@@ -42,3 +42,11 @@ def get_account_container(account: str, platform: str) -> dict | None:
             SELECT * FROM account_containers WHERE account = ? AND platform = ?
         """, (account, platform)).fetchone()
         return dict(row) if row else None
+
+
+def delete_account_container_by_name(container_name: str):
+    with _get_conn() as conn:
+        conn.execute("""
+            DELETE FROM account_containers WHERE container_name = ?
+        """, (container_name,))
+        conn.commit()

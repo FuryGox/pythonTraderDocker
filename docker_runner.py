@@ -47,6 +47,16 @@ def stop_container(container_id: str) -> str:
     return result.stdout.strip()
 
 
+def remove_container(container_id: str) -> str:
+    result = subprocess.run(
+        ["docker", "rm", "-f", container_id],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"docker rm failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def get_containers_status() -> list[dict]:
     cmd = [
         "docker", "ps", "-a",

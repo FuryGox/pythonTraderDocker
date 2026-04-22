@@ -3,8 +3,8 @@ import json
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, model_validator
 from enum import Enum
-from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container
-from db import init_db, save_account_container, get_account_container
+from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container, remove_container
+from db import init_db, save_account_container, get_account_container, delete_account_container_by_name
 
 app = FastAPI()
 
@@ -179,5 +179,20 @@ async def stop_container_route(request: Request):
     try:
         stopped = stop_container(payload.id)
         return {"status": "stopped", "container": stopped}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RemoveRequest(JsonStringCompatibleModel):
+    container_id: str
+
+
+@app.post("/api/remove")
+async def remove_container_route(request: Request):
+    payload = await parse_request_model(request, RemoveRequest)
+    try:
+        removed = remove_container(payload.container_id)
+        delete_account_container_by_name(removed)
+        return {"status": "removed", "container": removed}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
