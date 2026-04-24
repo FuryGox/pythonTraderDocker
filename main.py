@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
 from pydantic import BaseModel, model_validator
@@ -16,6 +17,16 @@ load_dotenv(Path(__file__).with_name(".env"))
 
 API_KEY_HEADER_NAME = os.getenv("API_KEY_HEADER", "x-api-key")
 API_KEY_VALUE = os.getenv("API_KEY") or secrets.token_urlsafe(32)
+
+
+def parse_cors_origins(value: str | None) -> list[str]:
+    if not value or value.strip() == "*":
+        return ["*"]
+
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+CORS_ALLOW_ORIGINS = parse_cors_origins(os.getenv("CORS_ALLOW_ORIGINS", "*"))
 
 api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
 
@@ -31,6 +42,14 @@ def require_api_key(api_key: str | None = Security(api_key_header)):
 
 
 app = FastAPI(dependencies=[Depends(require_api_key)])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 init_db()
 
