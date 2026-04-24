@@ -1,13 +1,36 @@
 import json
+import os
+import secrets
 import sqlite3
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi.security import APIKeyHeader
+from dotenv import load_dotenv
 from pydantic import BaseModel, model_validator
 from enum import Enum
 from docker_runner import start_mt4_docker, start_mt5_docker, start_ctrader_docker, get_containers_status, stop_container, restart_container, remove_container, clear_containers
 from db import init_db, save_account_container, get_account_container, delete_account_container_by_name, add_account_container, update_account_container, delete_account_container, list_account_containers, clear_account_containers, delete_account_containers_by_names
 
-app = FastAPI()
+load_dotenv(Path(__file__).with_name(".env"))
+
+API_KEY_HEADER_NAME = os.getenv("API_KEY_HEADER", "x-api-key")
+API_KEY_VALUE = os.getenv("API_KEY") or secrets.token_urlsafe(32)
+
+api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
+
+
+def require_api_key(api_key: str | None = Security(api_key_header)):
+    if api_key and secrets.compare_digest(api_key, API_KEY_VALUE):
+        return api_key
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=f"Missing or invalid {API_KEY_HEADER_NAME} header",
+    )
+
+
+app = FastAPI(dependencies=[Depends(require_api_key)])
 
 init_db()
 

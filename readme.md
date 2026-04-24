@@ -17,6 +17,13 @@ A FastAPI service that launches and manages Docker containers for MT4, MT5, and 
 pip install -r requirements.txt
 ```
 
+Create a `.env` file in the project root:
+
+```env
+API_KEY=your-secret-key
+API_KEY_HEADER=x-api-key
+```
+
 ## Run the API server
 
 ```bash
@@ -30,6 +37,20 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000`.  
 Interactive docs: `http://localhost:8000/docs`
+
+## Authentication Header
+
+Every API request must include a header-based API key.
+
+- Header name: `x-api-key` by default
+- Header value: taken from the `.env` file `API_KEY` value
+- Override the header name with `API_KEY_HEADER`
+
+Example:
+
+```bash
+curl -H "x-api-key: your-secret-key" http://localhost:8000/api/docker/status
+```
 
 ---
 
